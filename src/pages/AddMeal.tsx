@@ -1,16 +1,34 @@
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Camera, Search, Barcode } from "lucide-react";
+import { Camera, Search, Barcode, Loader2 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { Capacitor } from "@capacitor/core";
+import { supabase } from "@/integrations/supabase/client";
+
+interface FoodItem {
+  fdcId: number;
+  description: string;
+  brandOwner?: string;
+  servingSize?: number;
+  servingSizeUnit?: string;
+  foodNutrients: {
+    nutrientId: number;
+    nutrientName: string;
+    value: number;
+    unitName: string;
+  }[];
+}
 
 const AddMeal = () => {
   const [searchTerm, setSearchTerm] = useState("");
+  const [searchResults, setSearchResults] = useState<FoodItem[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [selectedFood, setSelectedFood] = useState<FoodItem | null>(null);
   const [foodData, setFoodData] = useState({
     name: "",
     calories: "",
@@ -67,6 +85,75 @@ const AddMeal = () => {
     }
   };
 
+  const handleSearch = async () => {
+    if (!searchTerm.trim()) return;
+    
+    setIsSearching(true);
+    setSearchResults([]);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('food-search', {
+        body: { searchTerm },
+      });
+      
+      if (error) throw error;
+      
+      if (data && data.foods) {
+        setSearchResults(data.foods);
+      }
+    } catch (error) {
+      console.error("Error searching foods:", error);
+      toast({
+        title: "Search failed",
+        description: "There was an error searching for foods. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleFoodSelect = async (food: FoodItem) => {
+    setSelectedFood(food);
+    
+    let calories = "";
+    let protein = "";
+    let carbs = "";
+    let fat = "";
+    
+    // Find nutrients
+    food.foodNutrients.forEach(nutrient => {
+      if (nutrient.nutrientName === "Energy" && nutrient.unitName === "KCAL") {
+        calories = nutrient.value.toString();
+      } else if (nutrient.nutrientName === "Protein") {
+        protein = nutrient.value.toString();
+      } else if (nutrient.nutrientName === "Carbohydrate, by difference") {
+        carbs = nutrient.value.toString();
+      } else if (nutrient.nutrientName === "Total lipid (fat)") {
+        fat = nutrient.value.toString();
+      }
+    });
+    
+    setFoodData({
+      name: food.description,
+      calories,
+      serving: food.servingSize ? `${food.servingSize} ${food.servingSizeUnit || 'g'}` : "100g",
+      protein,
+      carbs,
+      fat
+    });
+    
+    setSearchResults([]);
+    setSearchTerm("");
+  };
+  
+  // Initiate search when Enter key is pressed
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSearch();
+    }
+  };
+
   return (
     <div className="py-6">
       <h1 className="text-2xl font-bold mb-6">Add Food</h1>
@@ -80,8 +167,34 @@ const AddMeal = () => {
             className="pl-10"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
+            onKeyDown={handleKeyPress}
           />
+          <Button 
+            size="sm" 
+            className="absolute right-1 top-1 h-8"
+            onClick={handleSearch}
+            disabled={isSearching}
+          >
+            {isSearching ? <Loader2 className="h-4 w-4 animate-spin" /> : "Search"}
+          </Button>
         </div>
+        
+        {searchResults.length > 0 && (
+          <Card className="p-2 max-h-64 overflow-y-auto">
+            <ul className="divide-y">
+              {searchResults.map(food => (
+                <li 
+                  key={food.fdcId}
+                  className="p-2 hover:bg-gray-50 cursor-pointer"
+                  onClick={() => handleFoodSelect(food)}
+                >
+                  <p className="font-medium">{food.description}</p>
+                  {food.brandOwner && <p className="text-sm text-gray-500">{food.brandOwner}</p>}
+                </li>
+              ))}
+            </ul>
+          </Card>
+        )}
         
         <div className="grid grid-cols-2 gap-4">
           <Card className="p-4 flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 transition-colors" onClick={() => handleScan('barcode')}>
@@ -98,7 +211,9 @@ const AddMeal = () => {
         </div>
         
         <div className="space-y-4">
-          <h2 className="text-xl font-semibold">Quick Add</h2>
+          <h2 className="text-xl font-semibold">
+            {selectedFood ? "Food Details" : "Quick Add"}
+          </h2>
           <Card className="p-4">
             <div className="space-y-4">
               <div>

@@ -1,1 +1,8 @@
+
 project_id = "sbfmdsnbvylbtkqnbpgn"
+
+[functions.food-search]
+verify_jwt = false
+
+[functions.food-detail]
+verify_jwt = false
