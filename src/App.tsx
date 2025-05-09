@@ -8,6 +8,7 @@ import MainLayout from "@/components/layout/MainLayout";
 import Dashboard from "@/pages/Dashboard";
 import Diary from "@/pages/Diary";
 import AddMeal from "@/pages/AddMeal";
+import FoodSearch from "@/pages/FoodSearch";
 import Reports from "@/pages/Reports";
 import Profile from "@/pages/Profile";
 import Custom404 from "@/pages/Custom404";
@@ -25,6 +26,7 @@ const App = () => (
             <Route path="/" element={<Dashboard />} />
             <Route path="/diary" element={<Diary />} />
             <Route path="/add-meal" element={<AddMeal />} />
+            <Route path="/food-search" element={<FoodSearch />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/profile" element={<Profile />} />
           </Route>

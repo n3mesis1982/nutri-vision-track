@@ -1,11 +1,11 @@
 
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Camera, Search, Barcode, Loader2 } from "lucide-react";
+import { Camera, Search, Barcode, Loader2, Plus } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { Capacitor } from "@capacitor/core";
 import { supabase } from "@/integrations/supabase/client";
@@ -25,9 +25,12 @@ interface FoodItem {
 }
 
 const AddMeal = () => {
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchParams] = useSearchParams();
+  const foodId = searchParams.get("foodId");
+  
   const [searchResults, setSearchResults] = useState<FoodItem[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [isLoadingFood, setIsLoadingFood] = useState(false);
   const [selectedFood, setSelectedFood] = useState<FoodItem | null>(null);
   const [foodData, setFoodData] = useState({
     name: "",
@@ -39,6 +42,38 @@ const AddMeal = () => {
   });
   const navigate = useNavigate();
   const { toast } = useToast();
+  
+  // Load food details if ID is provided in URL
+  useEffect(() => {
+    if (foodId) {
+      fetchFoodDetails(foodId);
+    }
+  }, [foodId]);
+  
+  const fetchFoodDetails = async (id: string) => {
+    setIsLoadingFood(true);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('food-detail', {
+        body: { fdcId: id },
+      });
+      
+      if (error) throw error;
+      
+      if (data) {
+        handleFoodSelect(data);
+      }
+    } catch (error) {
+      console.error("Error fetching food details:", error);
+      toast({
+        title: "Failed to load food details",
+        description: "There was an error loading the food information",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingFood(false);
+    }
+  };
   
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { id, value } = e.target;
@@ -67,53 +102,11 @@ const AddMeal = () => {
     navigate("/diary");
   };
   
-  const handleScan = (type: 'barcode' | 'camera') => {
-    const isNative = Capacitor.isNativePlatform();
-    
-    if (isNative) {
-      // This is where we would implement the native functionality
-      toast({
-        title: type === 'barcode' ? "Scanning Barcode" : "Taking Photo",
-        description: "Native functionality coming soon.",
-      });
-    } else {
-      toast({
-        title: type === 'barcode' ? "Barcode Scanner" : "Photo Recognition",
-        description: `This feature works best on a mobile device.`,
-        variant: "default",
-      });
-    }
+  const navigateToSearch = () => {
+    navigate("/food-search");
   };
 
-  const handleSearch = async () => {
-    if (!searchTerm.trim()) return;
-    
-    setIsSearching(true);
-    setSearchResults([]);
-    
-    try {
-      const { data, error } = await supabase.functions.invoke('food-search', {
-        body: { searchTerm },
-      });
-      
-      if (error) throw error;
-      
-      if (data && data.foods) {
-        setSearchResults(data.foods);
-      }
-    } catch (error) {
-      console.error("Error searching foods:", error);
-      toast({
-        title: "Search failed",
-        description: "There was an error searching for foods. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSearching(false);
-    }
-  };
-
-  const handleFoodSelect = async (food: FoodItem) => {
+  const handleFoodSelect = (food: FoodItem) => {
     setSelectedFood(food);
     
     let calories = "";
@@ -144,147 +137,124 @@ const AddMeal = () => {
     });
     
     setSearchResults([]);
-    setSearchTerm("");
-  };
-  
-  // Initiate search when Enter key is pressed
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleSearch();
-    }
   };
 
   return (
     <div className="py-6">
       <h1 className="text-2xl font-bold mb-6">Add Food</h1>
       
-      <div className="space-y-6">
-        <div className="relative">
-          <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-          <Input
-            type="text"
-            placeholder="Search for a food..."
-            className="pl-10"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            onKeyDown={handleKeyPress}
-          />
-          <Button 
-            size="sm" 
-            className="absolute right-1 top-1 h-8"
-            onClick={handleSearch}
-            disabled={isSearching}
-          >
-            {isSearching ? <Loader2 className="h-4 w-4 animate-spin" /> : "Search"}
-          </Button>
+      {isLoadingFood ? (
+        <div className="flex flex-col items-center justify-center py-12">
+          <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
+          <p className="text-gray-500">Loading food information...</p>
         </div>
-        
-        {searchResults.length > 0 && (
-          <Card className="p-2 max-h-64 overflow-y-auto">
-            <ul className="divide-y">
-              {searchResults.map(food => (
-                <li 
-                  key={food.fdcId}
-                  className="p-2 hover:bg-gray-50 cursor-pointer"
-                  onClick={() => handleFoodSelect(food)}
-                >
-                  <p className="font-medium">{food.description}</p>
-                  {food.brandOwner && <p className="text-sm text-gray-500">{food.brandOwner}</p>}
-                </li>
-              ))}
-            </ul>
-          </Card>
-        )}
-        
-        <div className="grid grid-cols-2 gap-4">
-          <Card className="p-4 flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 transition-colors" onClick={() => handleScan('barcode')}>
-            <Barcode className="h-8 w-8 text-primary mb-2" />
-            <h3 className="font-medium text-center">Scan Barcode</h3>
-            <p className="text-xs text-gray-500 text-center mt-1">Scan packaged food</p>
-          </Card>
-          
-          <Card className="p-4 flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 transition-colors" onClick={() => handleScan('camera')}>
-            <Camera className="h-8 w-8 text-primary mb-2" />
-            <h3 className="font-medium text-center">Take Photo</h3>
-            <p className="text-xs text-gray-500 text-center mt-1">AI food recognition</p>
-          </Card>
-        </div>
-        
-        <div className="space-y-4">
-          <h2 className="text-xl font-semibold">
-            {selectedFood ? "Food Details" : "Quick Add"}
-          </h2>
-          <Card className="p-4">
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="food-name">Food Name</Label>
-                <Input
-                  id="food-name"
-                  placeholder="E.g., Grilled Chicken Breast"
-                  value={foodData.name}
-                  onChange={handleInputChange}
-                />
+      ) : (
+        <div className="space-y-6">
+          <Card className="p-4" onClick={navigateToSearch}>
+            <div className="flex items-center">
+              <div className="bg-gray-100 p-3 rounded-full mr-4">
+                <Search className="h-6 w-6 text-gray-500" />
               </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="food-calories">Calories</Label>
-                  <Input 
-                    id="food-calories" 
-                    type="number" 
-                    placeholder="kcal" 
-                    value={foodData.calories}
-                    onChange={handleInputChange}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="food-serving">Serving</Label>
-                  <Input 
-                    id="food-serving" 
-                    placeholder="100g" 
-                    value={foodData.serving}
-                    onChange={handleInputChange}
-                  />
-                </div>
+              <div className="flex-1">
+                <h3 className="font-medium">Search for food</h3>
+                <p className="text-sm text-gray-500">Find foods in our database</p>
               </div>
-              
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <Label htmlFor="food-protein">Protein (g)</Label>
-                  <Input 
-                    id="food-protein" 
-                    type="number" 
-                    value={foodData.protein}
-                    onChange={handleInputChange}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="food-carbs">Carbs (g)</Label>
-                  <Input 
-                    id="food-carbs" 
-                    type="number" 
-                    value={foodData.carbs}
-                    onChange={handleInputChange}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="food-fat">Fat (g)</Label>
-                  <Input 
-                    id="food-fat" 
-                    type="number" 
-                    value={foodData.fat}
-                    onChange={handleInputChange}
-                  />
-                </div>
-              </div>
-              
-              <Button onClick={handleAddManually} className="w-full">
-                Add to Diary
+              <Button variant="ghost" size="icon">
+                <Plus className="h-5 w-5" />
               </Button>
             </div>
           </Card>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <Card className="p-4 flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 transition-colors" onClick={navigateToSearch}>
+              <Barcode className="h-8 w-8 text-primary mb-2" />
+              <h3 className="font-medium text-center">Scan Barcode</h3>
+              <p className="text-xs text-gray-500 text-center mt-1">Scan packaged food</p>
+            </Card>
+            
+            <Card className="p-4 flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 transition-colors" onClick={() => navigate("/add-meal")}>
+              <Camera className="h-8 w-8 text-primary mb-2" />
+              <h3 className="font-medium text-center">Take Photo</h3>
+              <p className="text-xs text-gray-500 text-center mt-1">AI food recognition</p>
+            </Card>
+          </div>
+          
+          <div className="space-y-4">
+            <h2 className="text-xl font-semibold">
+              {selectedFood ? "Food Details" : "Quick Add"}
+            </h2>
+            <Card className="p-4">
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="food-name">Food Name</Label>
+                  <Input
+                    id="food-name"
+                    placeholder="E.g., Grilled Chicken Breast"
+                    value={foodData.name}
+                    onChange={handleInputChange}
+                  />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="food-calories">Calories</Label>
+                    <Input 
+                      id="food-calories" 
+                      type="number" 
+                      placeholder="kcal" 
+                      value={foodData.calories}
+                      onChange={handleInputChange}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="food-serving">Serving</Label>
+                    <Input 
+                      id="food-serving" 
+                      placeholder="100g" 
+                      value={foodData.serving}
+                      onChange={handleInputChange}
+                    />
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <Label htmlFor="food-protein">Protein (g)</Label>
+                    <Input 
+                      id="food-protein" 
+                      type="number" 
+                      value={foodData.protein}
+                      onChange={handleInputChange}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="food-carbs">Carbs (g)</Label>
+                    <Input 
+                      id="food-carbs" 
+                      type="number" 
+                      value={foodData.carbs}
+                      onChange={handleInputChange}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="food-fat">Fat (g)</Label>
+                    <Input 
+                      id="food-fat" 
+                      type="number" 
+                      value={foodData.fat}
+                      onChange={handleInputChange}
+                    />
+                  </div>
+                </div>
+                
+                <Button onClick={handleAddManually} className="w-full">
+                  Add to Diary
+                </Button>
+              </div>
+            </Card>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };
